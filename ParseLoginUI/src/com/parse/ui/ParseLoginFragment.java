@@ -32,20 +32,26 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import com.facebook.AccessToken;
 import com.facebook.GraphRequest;
 import com.facebook.GraphResponse;
-
+import com.parse.FunctionCallback;
+import com.parse.GetCallback;
 import com.parse.LogInCallback;
+import com.parse.ParseCloud;
 import com.parse.ParseException;
 import com.parse.ParseFacebookUtils;
+import com.parse.ParseQuery;
 import com.parse.ParseTwitterUtils;
 import com.parse.ParseUser;
 import com.parse.SaveCallback;
 import com.parse.twitter.Twitter;
 
 import org.json.JSONObject;
+
+import java.util.HashMap;
 
 /**
  * Fragment for the user login screen.
@@ -255,33 +261,48 @@ public class ParseLoginFragment extends ParseLoginFragmentBase {
         }
       } else if (user.isNew()) {
         GraphRequest.newMeRequest(AccessToken.getCurrentAccessToken(),
-            new GraphRequest.GraphJSONObjectCallback() {
-              @Override
-              public void onCompleted(JSONObject fbUser,
-                                      GraphResponse response) {
-                  /*
-                    If we were able to successfully retrieve the Facebook
-                    user's name, let's set it on the fullName field.
-                  */
-                ParseUser parseUser = ParseUser.getCurrentUser();
-                if (fbUser != null && parseUser != null
-                        && fbUser.optString("name").length() > 0) {
-                  parseUser.put(USER_OBJECT_NAME_FIELD, fbUser.optString("name"));
-                  parseUser.saveInBackground(new SaveCallback() {
-                    @Override
-                    public void done(ParseException e) {
-                      if (e != null) {
-                        debugLog(getString(
-                                R.string.com_parse_ui_login_warning_facebook_login_user_update_failed) +
-                                e.toString());
-                      }
-                      loginSuccess();
+                new GraphRequest.GraphJSONObjectCallback() {
+                  @Override
+                  public void onCompleted(final JSONObject fbUser,
+                                          GraphResponse response) {
+                      /*
+                        If we were able to successfully retrieve the Facebook
+                        user's name, let's set it on the fullName field.
+                      */
+                    final ParseUser parseUser = ParseUser.getCurrentUser();
+                    if (fbUser != null && parseUser != null
+                            && fbUser.optString("name").length() > 0) {
+                      ParseQuery<ParseUser> query = ParseUser.getQuery();
+                      query.whereEqualTo("email", fbUser.optString("email"));
+                      query.getFirstInBackground(new GetCallback<ParseUser>() {
+                        @Override
+                        public void done(ParseUser foundUser, ParseException e) {
+                          if (foundUser == null) {
+                            parseUser.put("name", fbUser.optString("name"));
+                            parseUser.put("email", fbUser.optString("email").toString().toLowerCase());
+                            parseUser.put("username", fbUser.optString("email").toString().toLowerCase());
+                            parseUser.saveInBackground(new SaveCallback() {
+                              @Override
+                              public void done(ParseException e) {
+                                loginSuccess();
+                              }
+                            });
+                          } else {
+                            HashMap<String, Object> params = new HashMap<String, Object>();
+                            params.put("objectId", parseUser.getObjectId());
+                            ParseCloud.callFunctionInBackground("deleteUserWithId", params, new FunctionCallback<Object>() {
+                              @Override
+                              public void done(Object o, ParseException e) {
+                                Toast.makeText(getActivity(), "Error: This email is already being used on Places I've Pooped", Toast.LENGTH_LONG).show();
+                                loadingFinish();
+                              }
+                            });
+                          }
+                        }
+                      });
                     }
-                  });
+                  }
                 }
-                loginSuccess();
-              }
-            }
         ).executeAsync();
       } else {
         loginSuccess();
